@@ -42,6 +42,12 @@ TRANSLATIONS = {
         "volume_label": "Volume",
         "settings": "Settings",
         "running": "RUNNING",
+        "press_any_key": "Press any key...",
+        "edit_preset_title": "Edit Preset",
+        "edit_hotkey_title": "Edit START Hotkey",
+        "label_label": "Label:",
+        "current_hotkey_label": "Current Hotkey:",
+        "enable_global_shortcut": "Enable Global Shortcut",
         "ok": "OK",
         "cancel": "Cancel"
     },
@@ -66,15 +72,86 @@ TRANSLATIONS = {
         "volume_label": "音量",
         "settings": "設定",
         "running": "計測中",
+        "press_any_key": "キーを押してください...",
+        "edit_preset_title": "プリセット編集",
+        "edit_hotkey_title": "開始ホットキー編集",
+        "label_label": "ラベル:",
+        "current_hotkey_label": "現在のホットキー:",
+        "enable_global_shortcut": "グローバルホットキーを有効にする",
         "ok": "保存",
         "cancel": "キャンセル"
     }
 }
 
+class KeyCaptureButton(QPushButton):
+    keyChanged = pyqtSignal(str)
+
+    def __init__(self, current_key, parent_dialog=None):
+        super().__init__(str(current_key).upper())
+        self.parent_dialog = parent_dialog
+        self.key_name = str(current_key).lower()
+        self.listener = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(self.start_capture)
+        
+        # Style will be handled by parent dialog or globally
+        self.setProperty("active", "false")
+
+    def start_capture(self):
+        # Update text to "Press any key..." using translation from parent dialog if available
+        msg = "Press any key..."
+        if self.parent_dialog and hasattr(self.parent_dialog, "tr"):
+            msg = self.parent_dialog.tr("press_any_key")
+            
+        self.setText(msg)
+        self.setProperty("active", "true")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        
+        if self.listener is not None:
+            self.listener.stop()
+            
+        self.listener = keyboard.Listener(on_press=self.on_press)
+        self.listener.start()
+        
+    def on_press(self, key):
+        try:
+            key_name = key.char
+        except AttributeError:
+            key_name = key.name
+            
+        self.key_name = str(key_name).lower()
+        QTimer.singleShot(0, self.finish_capture)
+        return False # Stop listener
+        
+    def finish_capture(self):
+        self.setText(self.key_name.upper())
+        self.setProperty("active", "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
+        self.keyChanged.emit(self.key_name)
+
+    def stop_listener(self):
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
+
 class PresetEditDialog(QDialog):
     def __init__(self, current_label, current_time, current_first_time, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edit Preset")
+        self.app_ref = None
+        # Try to find the app reference for language
+        p = parent
+        while p:
+            if hasattr(p, 'language'):
+                self.app_ref = p
+                break
+            p = p.parent()
+            
+        self.setWindowTitle(self.tr("edit_preset_title"))
         self.setFixedSize(300, 190)
         
         self.setStyleSheet("""
@@ -120,20 +197,35 @@ class PresetEditDialog(QDialog):
         self.first_time_edit.setSingleStep(1.0)
         self.first_time_edit.setValue(current_first_time)
         
-        layout.addRow("Label:", self.label_edit)
-        layout.addRow("Loop Time (s):", self.time_edit)
-        layout.addRow("First Time (s):", self.first_time_edit)
+        layout.addRow(self.tr("label_label"), self.label_edit)
+        layout.addRow(self.tr("loop_time"), self.time_edit)
+        layout.addRow(self.tr("first_time"), self.first_time_edit)
         
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btn_box.accepted.connect(self.accept)
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
 
+    def tr(self, key):
+        lang = "en"
+        if self.app_ref:
+            lang = self.app_ref.language
+        return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+
 
 class HotkeyEditDialog(QDialog):
     def __init__(self, current_hotkey, current_enabled, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edit START Hotkey")
+        self.app_ref = None
+        # Try to find the app reference for language
+        p = parent
+        while p:
+            if hasattr(p, 'language'):
+                self.app_ref = p
+                break
+            p = p.parent()
+
+        self.setWindowTitle(self.tr("edit_hotkey_title"))
         self.setFixedSize(300, 180)
         self.new_hotkey = current_hotkey
         self.new_enabled = current_enabled
@@ -150,7 +242,7 @@ class HotkeyEditDialog(QDialog):
                 border-radius: 5px;
             }
             QPushButton:hover { background-color: #353a42; }
-            QPushButton#CaptureBtn[active="true"] {
+            QPushButton[active="true"] {
                 border-color: #ffaa00;
                 color: #ffaa00;
             }
@@ -158,18 +250,15 @@ class HotkeyEditDialog(QDialog):
         
         layout = QVBoxLayout(self)
         
-        self.info_label = QLabel("Current Hotkey:")
+        self.info_label = QLabel(self.tr("current_hotkey_label"))
         self.info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.info_label)
         
-        self.capture_btn = QPushButton(str(self.new_hotkey).upper())
-        self.capture_btn.setObjectName("CaptureBtn")
-        self.capture_btn.setProperty("active", "false")
-        self.capture_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.capture_btn.clicked.connect(self.start_capture)
+        self.capture_btn = KeyCaptureButton(self.new_hotkey, parent_dialog=self)
+        self.capture_btn.keyChanged.connect(self.on_key_changed)
         layout.addWidget(self.capture_btn)
         
-        self.enable_chk = QCheckBox("Enable Global Shortcut")
+        self.enable_chk = QCheckBox(self.tr("enable_global_shortcut"))
         self.enable_chk.setChecked(self.new_enabled)
         layout.addWidget(self.enable_chk)
         
@@ -182,8 +271,6 @@ class HotkeyEditDialog(QDialog):
         btn_box.accepted.connect(self.accept)
         btn_box.rejected.connect(self.reject)
         layout.addWidget(btn_box)
-        
-        self.listener = None
         
     def add_time_editors(self, loop_val, first_val):
         self.has_time_edit = True
@@ -207,57 +294,30 @@ class HotkeyEditDialog(QDialog):
         self.time_edit_loop.setMaximum(9999.99)
         self.time_edit_loop.setSingleStep(1.0)
         self.time_edit_loop.setValue(loop_val)
-        form_layout.addRow("Loop Time (s):", self.time_edit_loop)
+        form_layout.addRow(self.tr("loop_time"), self.time_edit_loop)
         
         self.time_edit_first = QDoubleSpinBox()
         self.time_edit_first.setDecimals(2)
         self.time_edit_first.setMaximum(9999.99)
         self.time_edit_first.setSingleStep(1.0)
         self.time_edit_first.setValue(first_val)
-        form_layout.addRow("First Time (s):", self.time_edit_first)
+        form_layout.addRow(self.tr("first_time"), self.time_edit_first)
         
         # Add the form layout before the enable_chk and button box
         layout = self.layout()
         layout.insertLayout(3, form_layout)
         
-    def start_capture(self):
-        self.capture_btn.setText("Press any key...")
-        self.capture_btn.setProperty("active", "true")
-        self.capture_btn.style().unpolish(self.capture_btn)
-        self.capture_btn.style().polish(self.capture_btn)
-        
-        if self.listener is not None:
-            self.listener.stop()
-            
-        self.listener = keyboard.Listener(on_press=self.on_press)
-        self.listener.start()
-        
-    def on_press(self, key):
-        try:
-            # Alphabetic keys
-            key_name = key.char
-        except AttributeError:
-            # Special keys (e.g., F9, Space, Enter)
-            key_name = key.name
-            
-        self.new_hotkey = str(key_name).lower()
-        
-        # Stop listener and update UI via thread-safe invoke (though it's usually fine here for simple text)
-        QTimer.singleShot(0, self.finish_capture)
-        return False # Stop listener
-        
-    def finish_capture(self):
-        self.capture_btn.setText(self.new_hotkey.upper())
-        self.capture_btn.setProperty("active", "false")
-        self.capture_btn.style().unpolish(self.capture_btn)
-        self.capture_btn.style().polish(self.capture_btn)
-        if self.listener is not None:
-            self.listener.stop()
-            self.listener = None
+    def on_key_changed(self, new_key):
+        self.new_hotkey = new_key
+
+    def tr(self, key):
+        lang = "en"
+        if self.app_ref:
+            lang = self.app_ref.language
+        return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
             
     def closeEvent(self, event):
-        if self.listener is not None:
-            self.listener.stop()
+        self.capture_btn.stop_listener()
         super().closeEvent(event)
 
 class GlobalSettingsDialog(QDialog):
@@ -360,15 +420,14 @@ class GlobalSettingsDialog(QDialog):
         self.cd_first.setSingleStep(1.0)
         self.cd_first.setValue(self.app_ref.circled_first_time)
         
-        self.cd_hotkey = QLineEdit(self.app_ref.disaster_hotkey)
-        self.cd_hotkey.setMaximumWidth(100)
+        self.cd_hotkey_btn = KeyCaptureButton(self.app_ref.disaster_hotkey, parent_dialog=self)
         
         self.enable_circled_hk_chk = QCheckBox(self.tr("enable_circled"))
         self.enable_circled_hk_chk.setChecked(self.app_ref.circled_hotkey_enabled)
         
         circled_layout.addRow(self.tr("loop_time"), self.cd_loop)
         circled_layout.addRow(self.tr("first_time"), self.cd_first)
-        circled_layout.addRow(self.tr("hotkey"), self.cd_hotkey)
+        circled_layout.addRow(self.tr("hotkey"), self.cd_hotkey_btn)
         circled_layout.addRow("", self.enable_circled_hk_chk)
         main_layout.addWidget(circled_group)
         
@@ -376,13 +435,12 @@ class GlobalSettingsDialog(QDialog):
         hotkey_group = QGroupBox(self.tr("global_group"))
         hotkey_layout = QFormLayout(hotkey_group)
         
-        self.start_hotkey_input = QLineEdit(self.app_ref.start_hotkey)
-        self.start_hotkey_input.setMaximumWidth(100)
+        self.start_hotkey_btn = KeyCaptureButton(self.app_ref.start_hotkey, parent_dialog=self)
         
         self.enable_start_hk_chk = QCheckBox(self.tr("enable_start"))
         self.enable_start_hk_chk.setChecked(self.app_ref.start_hotkey_enabled)
         
-        hotkey_layout.addRow(self.tr("start_hotkey"), self.start_hotkey_input)
+        hotkey_layout.addRow(self.tr("start_hotkey"), self.start_hotkey_btn)
         hotkey_layout.addRow("", self.enable_start_hk_chk)
         main_layout.addWidget(hotkey_group)
         
@@ -428,12 +486,17 @@ class GlobalSettingsDialog(QDialog):
             'presets': presets_data,
             'circled_loop': self.cd_loop.value(),
             'circled_first': self.cd_first.value(),
-            'circled_hotkey': self.cd_hotkey.text().strip().lower(),
-            'start_hotkey': self.start_hotkey_input.text().strip().lower(),
+            'circled_hotkey': self.cd_hotkey_btn.key_name,
+            'start_hotkey': self.start_hotkey_btn.key_name,
             'start_hotkey_enabled': self.enable_start_hk_chk.isChecked(),
             'circled_hotkey_enabled': self.enable_circled_hk_chk.isChecked(),
             'language': self.lang_combo.currentData()
         }
+
+    def closeEvent(self, event):
+        self.cd_hotkey_btn.stop_listener()
+        self.start_hotkey_btn.stop_listener()
+        super().closeEvent(event)
 
 class CountdownTimerApp(QMainWindow):
     hotkey_pressed = pyqtSignal()
