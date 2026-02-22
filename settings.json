@@ -1,0 +1,32 @@
+{
+  "start_hotkey": "f9",
+  "disaster_hotkey": "f8",
+  "circled_loop_time": 19.15,
+  "circled_first_time": 5.0,
+  "start_hotkey_enabled": true,
+  "circled_hotkey_enabled": true,
+  "language": "en",
+  "presets": [
+    {
+      "label": "1",
+      "time": 20.0,
+      "first_time": 5.0
+    },
+    {
+      "label": "2",
+      "time": 17.75,
+      "first_time": 5.0
+    },
+    {
+      "label": "3（仮）",
+      "time": 15.75,
+      "first_time": 5.0
+    }
+  ],
+  "audio": {
+    "warning_5s_red": "sounds/warning_5s_red.wav",
+    "warning_5s_yellow": "sounds/warning_5s_yellow.wav",
+    "count_321": "sounds/count.wav",
+    "end_0s": "sounds/end.wav"
+  }
+}
