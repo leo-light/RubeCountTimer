@@ -22,7 +22,7 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 TRANSLATIONS = {
     "en": {
-        "window_title": "Rube Countdown Timer ver1.2",
+        "window_title": "Rube Countdown Timer ver1.4",
         "presets_group": "Presets (Normal Countdowns)",
         "circled_group": "CircleD Settings",
         "global_group": "Global Control",
@@ -46,7 +46,7 @@ TRANSLATIONS = {
         "cancel": "Cancel"
     },
     "ja": {
-        "window_title": "ルベカウントタイマー ver1.2",
+        "window_title": "ルベカウントタイマー ver1.4",
         "presets_group": "プリセット設定 (通常カウントダウン)",
         "circled_group": "サークルD設定",
         "global_group": "システム制御",
@@ -441,7 +441,7 @@ class CountdownTimerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("ルベカウントタイマー ver1.2")
+        self.setWindowTitle("ルベカウントタイマー ver1.4")
         self.setFixedSize(600, 390)
         self.setObjectName("MainWindow")
         
