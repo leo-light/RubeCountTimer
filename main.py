@@ -13,7 +13,7 @@ def get_external_dir():
 
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QSlider, QProgressBar, 
-                             QFrame, QSpacerItem, QSizePolicy, QDialog, QFormLayout, 
+                             QFrame, QSpacerItem, QSizePolicy, QDialog, QFormLayout, QGridLayout, 
                              QLineEdit, QDoubleSpinBox, QDialogButtonBox, QMessageBox, QCheckBox,
                              QTabWidget, QGroupBox, QMenu, QComboBox)
 from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
@@ -22,10 +22,10 @@ from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 TRANSLATIONS = {
     "en": {
-        "window_title": "Rube Countdown Timer ver1.5",
+        "window_title": "Rube Countdown Timer ver1.6",
         "presets_group": "Presets (Normal Countdowns)",
         "circlec_group": "CircleC Settings",
-        "global_group": "Global Control",
+        "global_group": "START Button Settings",
         "language_group": "Language Settings",
         "preset_name_label": "Preset {} Name:",
         "loop_time": "Loop Time (s):",
@@ -48,14 +48,22 @@ TRANSLATIONS = {
         "label_label": "Label:",
         "current_hotkey_label": "Current Hotkey:",
         "enable_global_shortcut": "Enable Global Shortcut",
+        "loop_a": "Loop A (s):",
+        "loop_b": "Loop B (s):",
+        "start_yellow": "Loop Time (Yellow):",
+        "start_rainbow": "Loop Time (Rainbow):",
+        "circlec_slow": "Slow Floor:",
+        "circlec_fast": "Fast Floor:",
+        "circled_ab": "Label 3 CircleD (A/B):",
+        "start_ab": "Label 3 START (A/B):",
         "ok": "OK",
         "cancel": "Cancel"
     },
     "ja": {
-        "window_title": "ルベカウントタイマー ver1.5",
+        "window_title": "ルベカウントタイマー ver1.6",
         "presets_group": "プリセット設定 (通常カウントダウン)",
         "circlec_group": "サークルC設定",
-        "global_group": "システム制御",
+        "global_group": "STARTボタンの設定",
         "language_group": "言語設定",
         "preset_name_label": "プリセット {} 名前:",
         "loop_time": "ループ時間 (秒):",
@@ -78,6 +86,16 @@ TRANSLATIONS = {
         "label_label": "ラベル:",
         "current_hotkey_label": "現在のホットキー:",
         "enable_global_shortcut": "グローバルホットキーを有効にする",
+        "loop_a": "ループ A (秒):",
+        "loop_b": "ループ B (秒):",
+        "start_yellow": "ループ時間(黄色):",
+        "start_rainbow": "ループ時間(虹):",
+        "circlec_slow": "遅い床(秒):",
+        "circlec_fast": "早い床(秒):",
+        "first_time_input": "初回設定時間(秒):",
+        "loop_time_input": "ループ時間(秒):",
+        "circled_ab": "ラベル3 サークルD A/B:",
+        "start_ab": "ラベル3 スタート A/B:",
         "ok": "保存",
         "cancel": "キャンセル"
     }
@@ -140,8 +158,9 @@ class KeyCaptureButton(QPushButton):
             self.listener = None
 
 class PresetEditDialog(QDialog):
-    def __init__(self, current_label, current_time, current_first_time, parent=None):
+    def __init__(self, current_label, current_time, current_first_time, index, parent=None):
         super().__init__(parent)
+        self.preset_index = index
         self.app_ref = None
         # Try to find the app reference for language
         p = parent
@@ -198,8 +217,23 @@ class PresetEditDialog(QDialog):
         self.first_time_edit.setValue(current_first_time)
         
         layout.addRow(self.tr("label_label"), self.label_edit)
-        layout.addRow(self.tr("loop_time"), self.time_edit)
+        if self.preset_index != 2:
+            layout.addRow(self.tr("loop_time"), self.time_edit)
         layout.addRow(self.tr("first_time"), self.first_time_edit)
+        
+        # New: Label 3 phasing in individual edit dialog
+        if self.preset_index == 2:
+            self.setFixedSize(300, 240) # Smaller height since floors are removed
+            
+            self.st_a_edit = QDoubleSpinBox()
+            self.st_a_edit.setDecimals(2)
+            self.st_a_edit.setValue(parent.label3_start_phases[0])
+            self.st_b_edit = QDoubleSpinBox()
+            self.st_b_edit.setDecimals(2)
+            self.st_b_edit.setValue(parent.label3_start_phases[1])
+            
+            layout.addRow(self.tr("start_yellow"), self.st_a_edit)
+            layout.addRow(self.tr("start_rainbow"), self.st_b_edit)
         
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btn_box.accepted.connect(self.accept)
@@ -320,12 +354,94 @@ class HotkeyEditDialog(QDialog):
         self.capture_btn.stop_listener()
         super().closeEvent(event)
 
+class CircleCSettingsDialog(QDialog):
+    def __init__(self, parent_app, parent=None):
+        super().__init__(parent)
+        self.app_ref = parent_app
+        self.setWindowTitle(self.tr("circlec_group"))
+        self.setFixedWidth(450)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(20)
+        
+        # 1. Timings Group
+        time_group = QGroupBox(self.tr("circlec_group"))
+        time_form = QFormLayout(time_group)
+        time_form.setSpacing(15)
+        time_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        def create_sb(val):
+            sb = QDoubleSpinBox()
+            sb.setDecimals(2)
+            sb.setRange(0, 9999.99)
+            sb.setFixedWidth(120)
+            sb.setValue(val)
+            return sb
+
+        if self.app_ref.current_preset_index == 2:
+            # Label 3: Slow/Fast Floor
+            self.p3_cd_a = create_sb(self.app_ref.label3_circled_phases[0])
+            self.p3_cd_b = create_sb(self.app_ref.label3_circled_phases[1])
+            self.circlec_first = create_sb(self.app_ref.circlec_first_time)
+            
+            time_form.addRow(self.tr("circlec_slow"), self.p3_cd_a)
+            time_form.addRow(self.tr("circlec_fast"), self.p3_cd_b)
+            # Add a small spacer
+            time_form.addItem(QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
+            time_form.addRow(self.tr("first_time_input"), self.circlec_first)
+        else:
+            # Regular CircleC
+            self.cc_loop = create_sb(self.app_ref.circlec_loop_time)
+            self.cc_first = create_sb(self.app_ref.circlec_first_time)
+            
+            time_form.addRow(self.tr("loop_time_input"), self.cc_loop)
+            time_form.addRow(self.tr("first_time_input"), self.cc_first)
+            
+        layout.addWidget(time_group)
+        
+        # 2. Hotkey Group
+        hk_group = QGroupBox(self.tr("global_group"))
+        hk_form = QFormLayout(hk_group)
+        hk_form.setSpacing(15)
+        
+        self.hk_btn = KeyCaptureButton(self.app_ref.circlec_hotkey, parent_dialog=self)
+        self.hk_chk = QCheckBox(self.tr("enable_circlec"))
+        self.hk_chk.setChecked(self.app_ref.circlec_hotkey_enabled)
+        
+        hk_form.addRow(self.tr("hotkey"), self.hk_btn)
+        hk_form.addRow("", self.hk_chk)
+        layout.addWidget(hk_group)
+        
+        # Buttons
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText(self.tr("ok"))
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setText(self.tr("cancel"))
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+
+    def tr(self, key):
+        return TRANSLATIONS.get(self.app_ref.language, TRANSLATIONS["en"]).get(key, key)
+    
+    def get_data(self):
+        data = {
+            "hotkey": self.hk_btn.key_name,
+            "enabled": self.hk_chk.isChecked()
+        }
+        if self.app_ref.current_preset_index == 2:
+            data["label3_circled_phases"] = [self.p3_cd_a.value(), self.p3_cd_b.value()]
+            data["circlec_first_time"] = self.circlec_first.value()
+        else:
+            data["circlec_loop_time"] = self.cc_loop.value()
+            data["circlec_first_time"] = self.cc_first.value()
+        return data
+
 class GlobalSettingsDialog(QDialog):
     def __init__(self, parent_app, parent=None):
         super().__init__(parent)
         self.app_ref = parent_app
         self.setWindowTitle("Global Settings")
-        self.setFixedSize(500, 780)
+        self.setFixedSize(850, 880)
         
         self.setStyleSheet("""
             QDialog { background-color: #22252a; color: white; }
@@ -355,80 +471,99 @@ class GlobalSettingsDialog(QDialog):
         """)
         
         main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(25)
         
         # 1. Presets Settings
         preset_group = QGroupBox(self.tr("presets_group"))
         preset_vbox = QVBoxLayout(preset_group)
-        preset_vbox.setSpacing(15) 
+        preset_vbox.setSpacing(25) 
         
         self.preset_inputs = []
         for i, preset in enumerate(self.app_ref.presets):
-            preset_block = QVBoxLayout()
+            preset_block = QWidget()
+            # Use QGridLayout for the entire block for maximum control
+            block_grid = QGridLayout(preset_block)
+            block_grid.setContentsMargins(15, 0, 15, 0)
+            block_grid.setSpacing(10)
             
-            # Label row: Name
-            label_row = QHBoxLayout()
-            label_row.addWidget(QLabel(self.tr("preset_name_label").format(i+1)))
+            # Row 0: Preset Name Label and LineEdit
+            name_label = QLabel(self.tr("preset_name_label").format(i+1))
+            name_label.setMinimumWidth(120)
             le_label = QLineEdit(preset['label'])
-            le_label.setMinimumWidth(200)
-            label_row.addWidget(le_label)
-            label_row.addStretch()
-            preset_block.addLayout(label_row)
+            le_label.setMinimumWidth(250)
             
-            # Times row: Loop and First
-            times_row = QHBoxLayout()
-            times_row.addSpacing(20)
+            block_grid.addWidget(name_label, 0, 0, Qt.AlignmentFlag.AlignRight)
+            block_grid.addWidget(le_label, 0, 1, 1, 3) # Span across
             
-            sb_loop = QDoubleSpinBox()
-            sb_loop.setDecimals(2)
-            sb_loop.setMaximum(9999.99)
-            sb_loop.setSingleStep(1.0)
-            sb_loop.setValue(float(preset['time']))
+            def create_sb(val):
+                sb = QDoubleSpinBox()
+                sb.setDecimals(2)
+                sb.setRange(0, 9999.99)
+                sb.setFixedWidth(120)
+                sb.setValue(val)
+                return sb
+
+            sb_loop = create_sb(float(preset['time']))
+            sb_first = create_sb(float(preset.get('first_time', 5.00)))
             
-            sb_first = QDoubleSpinBox()
-            sb_first.setDecimals(2)
-            sb_first.setMaximum(9999.99)
-            sb_first.setSingleStep(1.0)
-            sb_first.setValue(float(preset.get('first_time', 5.00)))
-            
-            times_row.addWidget(QLabel(self.tr("loop_time")))
-            times_row.addWidget(sb_loop)
-            times_row.addSpacing(10)
-            times_row.addWidget(QLabel(self.tr("first_time")))
-            times_row.addWidget(sb_first)
-            times_row.addStretch()
-            
-            preset_block.addLayout(times_row)
-            preset_vbox.addLayout(preset_block)
+            if i == 2:
+                # Label 3: START timings (Yellow/Rainbow/First)
+                self.p3_st_a = create_sb(self.app_ref.label3_start_phases[0])
+                self.p3_st_b = create_sb(self.app_ref.label3_start_phases[1])
+                
+                # Row 1: Yellow Loop and Rainbow Loop
+                block_grid.addWidget(QLabel(self.tr("start_yellow")), 1, 0, Qt.AlignmentFlag.AlignRight)
+                block_grid.addWidget(self.p3_st_a, 1, 1)
+                block_grid.addWidget(QLabel(self.tr("start_rainbow")), 1, 2, Qt.AlignmentFlag.AlignRight)
+                block_grid.addWidget(self.p3_st_b, 1, 3)
+                
+                # Row 2: First Time
+                block_grid.addWidget(QLabel(self.tr("first_time_input")), 2, 0, Qt.AlignmentFlag.AlignRight)
+                block_grid.addWidget(sb_first, 2, 1)
+            else:
+                # Row 1: Loop Time and First Time
+                block_grid.addWidget(QLabel(self.tr("loop_time_input")), 1, 0, Qt.AlignmentFlag.AlignRight)
+                block_grid.addWidget(sb_loop, 1, 1)
+                block_grid.addWidget(QLabel(self.tr("first_time_input")), 1, 2, Qt.AlignmentFlag.AlignRight)
+                block_grid.addWidget(sb_first, 1, 3)
+                
+            preset_vbox.addWidget(preset_block)
             self.preset_inputs.append({'label': le_label, 'time': sb_loop, 'first_time': sb_first})
             
         main_layout.addWidget(preset_group)
         
-        # 2. CircleC Settings
         circlec_group = QGroupBox(self.tr("circlec_group"))
-        circlec_layout = QFormLayout(circlec_group)
-        circlec_layout.setSpacing(10)
+        circlec_grid = QGridLayout(circlec_group)
+        circlec_grid.setContentsMargins(20, 15, 20, 15)
+        circlec_grid.setSpacing(15)
         
-        self.circlec_loop_input = QDoubleSpinBox()
-        self.circlec_loop_input.setDecimals(2)
-        self.circlec_loop_input.setMaximum(9999.99)
-        self.circlec_loop_input.setSingleStep(1.0)
-        self.circlec_loop_input.setValue(self.app_ref.circlec_loop_time)
+        # Row 0: Loop and First Time
+        self.circlec_loop_input = create_sb(self.app_ref.circlec_loop_time)
+        self.circlec_first_input = create_sb(self.app_ref.circlec_first_time)
         
-        self.circlec_first_input = QDoubleSpinBox()
-        self.circlec_first_input.setDecimals(2)
-        self.circlec_first_input.setMaximum(9999.99)
-        self.circlec_first_input.setSingleStep(1.0)
-        self.circlec_first_input.setValue(self.app_ref.circlec_first_time)
+        circlec_grid.addWidget(QLabel(self.tr("loop_time_input")), 0, 0, Qt.AlignmentFlag.AlignRight)
+        circlec_grid.addWidget(self.circlec_loop_input, 0, 1)
+        circlec_grid.addWidget(QLabel(self.tr("first_time_input")), 0, 2, Qt.AlignmentFlag.AlignRight)
+        circlec_grid.addWidget(self.circlec_first_input, 0, 3)
         
+        # Row 1: Slow and Fast Floor
+        self.p3_cd_a = create_sb(self.app_ref.label3_circled_phases[0])
+        self.p3_cd_b = create_sb(self.app_ref.label3_circled_phases[1])
+        
+        circlec_grid.addWidget(QLabel(self.tr("circlec_slow")), 1, 0, Qt.AlignmentFlag.AlignRight)
+        circlec_grid.addWidget(self.p3_cd_a, 1, 1)
+        circlec_grid.addWidget(QLabel(self.tr("circlec_fast")), 1, 2, Qt.AlignmentFlag.AlignRight)
+        circlec_grid.addWidget(self.p3_cd_b, 1, 3)
+        
+        # Row 2: Hotkey
         self.circlec_hotkey_btn = KeyCaptureButton(self.app_ref.circlec_hotkey, parent_dialog=self)
-        
         self.enable_circlec_hk_chk = QCheckBox(self.tr("enable_circlec"))
         self.enable_circlec_hk_chk.setChecked(self.app_ref.circlec_hotkey_enabled)
         
-        circlec_layout.addRow(self.tr("loop_time"), self.circlec_loop_input)
-        circlec_layout.addRow(self.tr("first_time"), self.circlec_first_input)
-        circlec_layout.addRow(self.tr("hotkey"), self.circlec_hotkey_btn)
-        circlec_layout.addRow("", self.enable_circlec_hk_chk)
+        circlec_grid.addWidget(QLabel(self.tr("hotkey")), 2, 0, Qt.AlignmentFlag.AlignRight)
+        circlec_grid.addWidget(self.circlec_hotkey_btn, 2, 1)
+        circlec_grid.addWidget(self.enable_circlec_hk_chk, 2, 2, 1, 2)
+
         main_layout.addWidget(circlec_group)
         
         # 3. Global Hotkey Settings
@@ -436,6 +571,7 @@ class GlobalSettingsDialog(QDialog):
         hotkey_layout = QFormLayout(hotkey_group)
         
         self.start_hotkey_btn = KeyCaptureButton(self.app_ref.start_hotkey, parent_dialog=self)
+        self.start_hotkey_btn.setFixedWidth(140) # Match CircleC button weight (v1.7.0)
         
         self.enable_start_hk_chk = QCheckBox(self.tr("enable_start"))
         self.enable_start_hk_chk.setChecked(self.app_ref.start_hotkey_enabled)
@@ -490,7 +626,9 @@ class GlobalSettingsDialog(QDialog):
             'circlec_hotkey': self.circlec_hotkey_btn.key_name,
             'circlec_hotkey_enabled': self.enable_circlec_hk_chk.isChecked(),
             'start_hotkey': self.start_hotkey_btn.key_name,
-            'start_hotkey_enabled': self.enable_start_hk_chk.isChecked()
+            'start_hotkey_enabled': self.enable_start_hk_chk.isChecked(),
+            'label3_circled_phases': [self.p3_cd_a.value(), self.p3_cd_b.value()],
+            'label3_start_phases': [self.p3_st_a.value(), self.p3_st_b.value()]
         }
 
     def closeEvent(self, event):
@@ -504,7 +642,7 @@ class CountdownTimerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("ルベカウントタイマー ver1.5")
+        self.setWindowTitle("ルベカウントタイマー ver1.6")
         self.setFixedSize(600, 390)
         self.setObjectName("MainWindow")
         
@@ -519,10 +657,10 @@ class CountdownTimerApp(QMainWindow):
         self.presets = [
             {'label': '1', 'time': 20.0, 'first_time': 5.0},
             {'label': '2', 'time': 17.75, 'first_time': 5.0},
-            {'label': '3', 'time': 23.50, 'first_time': 5.0}
+            {'label': '3', 'time': 23.75, 'first_time': 5.0} # New default Yellow
         ]
         self.language = 'ja'
-        self.circlec_loop_time = 22.50
+        self.circlec_loop_time = 19.15
         self.circlec_first_time = 5.00
         self.start_hotkey = 'f9'
         self.circlec_hotkey = 'f8'
@@ -535,6 +673,9 @@ class CountdownTimerApp(QMainWindow):
             "warning_5s_red": "sounds/warning_5s_red.wav",
             "warning_5s_yellow": "sounds/warning_5s_yellow.wav",
             "warning_5s_circlec": "sounds/warning_5s_circleC.wav",
+            "warning_5s_slow": "sounds/warning_5s_slow.wav",
+            "warning_5s_fast": "sounds/warning_5s_fast.wav",
+            "warning_5s_rainbow": "sounds/warning_5s_rainbow.wav",
             "count_321": "sounds/count.wav",
             "end_0s": "sounds/end.wav"
         }
@@ -578,6 +719,18 @@ class CountdownTimerApp(QMainWindow):
         self.player_5s_circlec = QMediaPlayer()
         self.audio_out_5s_circlec = QAudioOutput()
         self.player_5s_circlec.setAudioOutput(self.audio_out_5s_circlec)
+        
+        self.player_5s_slow = QMediaPlayer()
+        self.audio_out_5s_slow = QAudioOutput()
+        self.player_5s_slow.setAudioOutput(self.audio_out_5s_slow)
+        
+        self.player_5s_fast = QMediaPlayer()
+        self.audio_out_5s_fast = QAudioOutput()
+        self.player_5s_fast.setAudioOutput(self.audio_out_5s_fast)
+        
+        self.player_5s_rainbow = QMediaPlayer()
+        self.audio_out_5s_rainbow = QAudioOutput()
+        self.player_5s_rainbow.setAudioOutput(self.audio_out_5s_rainbow)
         
         self.player_count = QMediaPlayer()
         self.audio_out_count = QAudioOutput()
@@ -637,13 +790,18 @@ class CountdownTimerApp(QMainWindow):
             # Handle migration from disaster_hotkey/circled_hotkey to circlec_hotkey
             self.circlec_hotkey = data.get('circlec_hotkey', data.get('disaster_hotkey', data.get('circled_hotkey', 'f8')))
             
-            self.circlec_loop_time = float(data.get('circlec_loop_time', data.get('circled_loop_time', 22.50)))
+            self.circlec_loop_time = float(data.get('circlec_loop_time', data.get('circled_loop_time', 19.15)))
             self.circlec_first_time = float(data.get('circlec_first_time', data.get('circled_first_time', 5.00)))
             
             # Individual hotkey flags
             self.start_hotkey_enabled = data.get('start_hotkey_enabled', data.get('hotkey_enabled', True))
             self.circlec_hotkey_enabled = data.get('circlec_hotkey_enabled', data.get('circled_hotkey_enabled', data.get('hotkey_enabled', True)))
             self.language = data.get('language', 'en')
+            
+            # Label 3 Multi-phase settings
+            p3 = self.presets[2] if len(self.presets) > 2 else {}
+            self.label3_circled_phases = data.get('label3_circled_phases', [23.50, 21.00]) # Updated v1.6.9
+            self.label3_start_phases = data.get('label3_start_phases', [23.75, 23.50]) # New defaults
         except Exception as e:
             print(f"Error parsing loaded settings: {e}")
 
@@ -660,7 +818,9 @@ class CountdownTimerApp(QMainWindow):
                     "circlec_hotkey_enabled": self.circlec_hotkey_enabled,
                     "language": self.language,
                     "presets": self.presets,
-                    "audio": self.audio_settings
+                    "audio": self.audio_settings,
+                    "label3_circled_phases": self.label3_circled_phases,
+                    "label3_start_phases": self.label3_start_phases
                 }
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
@@ -671,12 +831,29 @@ class CountdownTimerApp(QMainWindow):
         path_5s_red = os.path.join(ext_dir, self.audio_settings.get("warning_5s_red", "sounds/warning_5s_red.wav"))
         path_5s_yellow = os.path.join(ext_dir, self.audio_settings.get("warning_5s_yellow", "sounds/warning_5s_yellow.wav"))
         path_5s_circlec = os.path.join(ext_dir, self.audio_settings.get("warning_5s_circlec", "sounds/warning_5s_circleC.wav"))
+        path_5s_slow = os.path.join(ext_dir, self.audio_settings.get("warning_5s_slow", "sounds/warning_5s_slow.wav"))
+        path_5s_fast = os.path.join(ext_dir, self.audio_settings.get("warning_5s_fast", "sounds/warning_5s_fast.wav"))
+        path_5s_rainbow = os.path.join(ext_dir, self.audio_settings.get("warning_5s_rainbow", "sounds/warning_5s_rainbow.wav"))
+        
+        # Standard fallback for all 5s warnings
+        std_fallback = os.path.join(ext_dir, "sounds/warning_5s.wav")
+        
+        def set_p_source(player, path):
+            if os.path.exists(path):
+                player.setSource(QUrl.fromLocalFile(path))
+            elif os.path.exists(std_fallback):
+                player.setSource(QUrl.fromLocalFile(std_fallback))
+
+        set_p_source(self.player_5s_red, path_5s_red)
+        set_p_source(self.player_5s_yellow, path_5s_yellow)
+        set_p_source(self.player_5s_circlec, path_5s_circlec)
+        set_p_source(self.player_5s_slow, path_5s_slow)
+        set_p_source(self.player_5s_fast, path_5s_fast)
+        set_p_source(self.player_5s_rainbow, path_5s_rainbow)
+        
         path_count = os.path.join(ext_dir, self.audio_settings.get("count_321", "sounds/count.wav"))
         path_end = os.path.join(ext_dir, self.audio_settings.get("end_0s", "sounds/end.wav"))
         
-        if os.path.exists(path_5s_red): self.player_5s_red.setSource(QUrl.fromLocalFile(path_5s_red))
-        if os.path.exists(path_5s_yellow): self.player_5s_yellow.setSource(QUrl.fromLocalFile(path_5s_yellow))
-        if os.path.exists(path_5s_circlec): self.player_5s_circlec.setSource(QUrl.fromLocalFile(path_5s_circlec))
         if os.path.exists(path_count): self.player_count.setSource(QUrl.fromLocalFile(path_count))
         if os.path.exists(path_end): self.player_end.setSource(QUrl.fromLocalFile(path_end))
 
@@ -696,7 +873,12 @@ class CountdownTimerApp(QMainWindow):
         
         self.preset_buttons = []
         for i, preset in enumerate(self.presets):
-            btn = QPushButton(f"{preset['label']} ({preset['time']:.2f}s)")
+            if i == 2:
+                # Label 3: Show dual phases at startup (v1.7.1)
+                btn_text = f"{preset['label']} ({self.label3_start_phases[0]:.2f}/{self.label3_start_phases[1]:.2f})"
+            else:
+                btn_text = f"{preset['label']} ({preset['time']:.2f}s)"
+            btn = QPushButton(btn_text)
             btn.setObjectName("PresetButton")
             btn.setProperty("active", "false")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -796,10 +978,10 @@ class CountdownTimerApp(QMainWindow):
         self.circlec_btn.setObjectName("CircleCButton")
         self.circlec_btn.setFixedSize(140, 60)
         self.circlec_btn.clicked.connect(self.start_circlec_timer)
+        self.circlec_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.circlec_btn.customContextMenuRequested.connect(self.show_circlec_context_menu)
         self.circlec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_circlec_info_label()
-        self.circlec_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.circlec_btn.customContextMenuRequested.connect(self.open_hotkey_edit_circlec)
         
         btn_layout.addWidget(self.start_btn)
         btn_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -886,6 +1068,8 @@ class CountdownTimerApp(QMainWindow):
                 self.start_hotkey_enabled = bool(new_data['start_hotkey_enabled'])
                 self.circlec_hotkey_enabled = bool(new_data['circlec_hotkey_enabled'])
                 self.language = str(new_data['language'])
+                self.label3_circled_phases = new_data['label3_circled_phases']
+                self.label3_start_phases = new_data['label3_start_phases']
                 
                 self.save_settings()
                 self.retranslate_ui()
@@ -994,6 +1178,7 @@ class CountdownTimerApp(QMainWindow):
             preset['label'], 
             float(preset['time']), 
             float(preset.get('first_time', 6.00)),
+            index,
             self
         )
         
@@ -1006,17 +1191,49 @@ class CountdownTimerApp(QMainWindow):
             self.presets[index]['label'] = new_label
             self.presets[index]['time'] = new_time
             self.presets[index]['first_time'] = new_first_time
+            
+            if index == 2:
+                self.label3_start_phases = [dialog.st_a_edit.value(), dialog.st_b_edit.value()]
+                # Update main loop time for display to match first phase or average?
+                # User said "move yellow/rainbow here", maybe just keep existing time or use yellow.
+                # Let's use avg for the button label but keep logic as is.
+                new_time = dialog.st_a_edit.value() 
+                self.presets[index]['time'] = new_time
+            
             self.save_settings()
             
-            # Update UI button (hide first loop time for cleaner UI)
+            # Update UI button
             btn = self.preset_buttons[index]
-            btn.setText(f"{new_label} ({new_time:.2f}s)")
+            if index == 2:
+                btn.setText(f"{new_label} ({self.label3_start_phases[0]:.2f}/{self.label3_start_phases[1]:.2f})")
+            else:
+                btn.setText(f"{new_label} ({new_time:.2f}s)")
             
             # If current preset, update display
             if self.current_preset_index == index:
                 self.initial_time = new_time
                 self.time_left = new_time
                 self.update_display()
+
+    def show_circlec_context_menu(self, pos):
+        if self.is_running:
+            return 
+            
+        dialog = CircleCSettingsDialog(self, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            self.circlec_hotkey = data["hotkey"]
+            self.circlec_hotkey_enabled = data["enabled"]
+            if self.current_preset_index == 2:
+                self.label3_circled_phases = data["label3_circled_phases"]
+                self.circlec_first_time = data["circlec_first_time"]
+            else:
+                self.circlec_loop_time = data["circlec_loop_time"]
+                self.circlec_first_time = data["circlec_first_time"]
+            
+            self.save_settings()
+            self.register_hotkey() # Refresh hotkey listener
+            self.update_circlec_info_label()
 
     def select_preset(self, index):
         if self.is_running:
@@ -1039,11 +1256,18 @@ class CountdownTimerApp(QMainWindow):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             
+        # Update Start button text
+        self.start_btn.setText(f"{self.tr('start_btn')}\n({preset['time']:.2f}s)")
+        
         self.update_circlec_info_label()
 
     def update_circlec_info_label(self):
         if not self.is_running or self.timer_mode != "circlec":
-            self.circlec_btn.setText(f"{self.tr('circlec_btn')}\n({self.circlec_loop_time:.2f}s)")
+            if self.current_preset_index == 2:
+                # Label 3: Show dual times with 2 decimals (v1.6.9)
+                self.circlec_btn.setText(f"{self.tr('circlec_btn')}\n({self.label3_circled_phases[0]:.2f}/{self.label3_circled_phases[1]:.2f})")
+            else:
+                self.circlec_btn.setText(f"{self.tr('circlec_btn')}\n({self.circlec_loop_time:.2f}s)")
         else:
             self.circlec_btn.setText("C-RUN")
 
@@ -1091,7 +1315,10 @@ class CountdownTimerApp(QMainWindow):
         vol = value / 100.0
         self.audio_out_5s_red.setVolume(vol)
         self.audio_out_5s_yellow.setVolume(vol)
-        self.audio_out_5s_circlec.setVolume(vol) # Fixed: Include circlec warning volume
+        self.audio_out_5s_circlec.setVolume(vol)
+        self.audio_out_5s_slow.setVolume(vol)
+        self.audio_out_5s_fast.setVolume(vol)
+        self.audio_out_5s_rainbow.setVolume(vol)
         self.audio_out_count.setVolume(vol)
         self.audio_out_end.setVolume(vol)
 
@@ -1155,7 +1382,7 @@ class CountdownTimerApp(QMainWindow):
         self.update_circlec_info_label()
         self.circlec_btn.setStyleSheet("") 
         
-        # Fully reset timer and loop count as requested
+        # Revert to loop time when stopped (as requested v1.6.6)
         preset = self.presets[self.current_preset_index]
         self.initial_time = float(preset['time'])
         self.time_left = self.initial_time
@@ -1163,42 +1390,65 @@ class CountdownTimerApp(QMainWindow):
         self.reset_triggers()
         self.latency_slider.setValue(0)
         self.latency_slider.setEnabled(False)
+        self.set_warning_visuals("none") # Clear color warnings
         self.update_display()
+        self.update_circlec_info_label()
 
     def update_timer(self):
         self.time_left -= 0.01
         
         # Audio Triggers
-        if self.time_left <= 5.01 and not self.warning_triggered:
+        # Slightly larger buffer (5.05) to ensure trigger if starting exactly at 5.0
+        if self.time_left <= 5.05 and not self.warning_triggered:
             self.warning_triggered = True
             
-            if self.timer_mode == "circlec":
+            # Label 3 specific logic (Highest priority)
+            if self.current_preset_index == 2:
+                if self.timer_mode == "circlec":
+                    # CircleD (CircleC) Logic: Phase 1 (5s), Phase 2 (Slow), Phase 3 (Fast)
+                    if self.loop_count == 1:
+                        self.set_warning_visuals("red")
+                        self.player_5s_circlec.setPosition(0)
+                        self.player_5s_circlec.play()
+                    elif self.loop_count % 2 == 0:
+                        self.set_warning_visuals("yellow")
+                        self.player_5s_slow.setPosition(0)
+                        self.player_5s_slow.play()
+                    else:
+                        self.set_warning_visuals("red")
+                        self.player_5s_fast.setPosition(0)
+                        self.player_5s_fast.play()
+                else:
+                    # START Logic: Phase 1 (Red), Phase 2 (Yellow), Phase 3 (Rainbow)
+                    if self.loop_count == 1:
+                        self.set_warning_visuals("red")
+                        self.player_5s_red.setPosition(0)
+                        self.player_5s_red.play()
+                    elif self.loop_count % 2 == 0:
+                        self.set_warning_visuals("yellow")
+                        self.player_5s_yellow.setPosition(0)
+                        self.player_5s_yellow.play()
+                    else:
+                        self.set_warning_visuals("red") # Visual is red as requested
+                        self.player_5s_red.setPosition(0)
+                        self.player_5s_red.play()
+            
+            # Global default logic for other presets
+            elif self.timer_mode == "circlec":
                 self.set_warning_visuals("red")
                 self.player_5s_circlec.setPosition(0)
                 self.player_5s_circlec.play()
             else:
-                # Custom warning logic for specific presets
-                if self.current_preset_index == 2:
-                    # Preset 3: Alternating Red/Yellow (Red -> Yellow -> Red -> Yellow...)
-                    if self.loop_count % 2 == 1:
-                        self.set_warning_visuals("red")
-                        self.player_5s_red.setPosition(0)
-                        self.player_5s_red.play()
-                    else:
-                        self.set_warning_visuals("yellow")
-                        self.player_5s_yellow.setPosition(0)
-                        self.player_5s_yellow.play()
+                # Presets 1 & 2: 3-loop cycle (Red -> Red -> Yellow)
+                mod_val = self.loop_count % 3
+                if mod_val == 1 or mod_val == 2:
+                    self.set_warning_visuals("red")
+                    self.player_5s_red.setPosition(0)
+                    self.player_5s_red.play()
                 else:
-                    # Presets 1 & 2: 3-loop cycle (Red -> Red -> Yellow)
-                    mod_val = self.loop_count % 3
-                    if mod_val == 1 or mod_val == 2:
-                        self.set_warning_visuals("red")
-                        self.player_5s_red.setPosition(0)
-                        self.player_5s_red.play()
-                    else:
-                        self.set_warning_visuals("yellow")
-                        self.player_5s_yellow.setPosition(0)
-                        self.player_5s_yellow.play()
+                    self.set_warning_visuals("yellow")
+                    self.player_5s_yellow.setPosition(0)
+                    self.player_5s_yellow.play()
             
         if self.time_left <= 3.01 and not self.count_3_triggered:
             self.count_3_triggered = True
@@ -1227,8 +1477,18 @@ class CountdownTimerApp(QMainWindow):
         self.update_display()
 
     def restart_countdown(self):
-        self.time_left = self.initial_time
         self.loop_count += 1 
+        
+        if self.current_preset_index == 2:
+            # Multi-phase logic for Label 3
+            if self.timer_mode == "circlec":
+                # CircleD: alternating A and B
+                self.initial_time = self.label3_circled_phases[0] if self.loop_count % 2 == 0 else self.label3_circled_phases[1]
+            else:
+                # START: alternating A and B
+                self.initial_time = self.label3_start_phases[0] if self.loop_count % 2 == 0 else self.label3_start_phases[1]
+        
+        self.time_left = self.initial_time
         self.reset_triggers()
         self.latency_slider.setValue(0)
         self.update_display()
@@ -1252,15 +1512,16 @@ class CountdownTimerApp(QMainWindow):
         
         # We need to compute progress base on whether it's the very first loop or subsequent loops
         # If we are stopped and at the start, max_time matches what is displayed (initial_time)
-        if not self.is_running and self.loop_count == 1:
-            max_time = self.initial_time
-        else:
-            if self.timer_mode == "circlec":
-                max_time = self.circlec_first_time if self.loop_count == 1 else self.circlec_loop_time
+        if self.loop_count == 1:
+            if not self.is_running:
+                max_time = self.time_left # Full bar at idle
+            elif self.timer_mode == "circlec":
+                max_time = self.circlec_first_time
             else:
                 preset = self.presets[self.current_preset_index]
-                # First loop uses 'first_time', subsequent loops use 'initial_time' (normal time)
-                max_time = float(preset.get('first_time', 5.00)) if self.loop_count == 1 else self.initial_time
+                max_time = float(preset.get('first_time', 5.00))
+        else:
+            max_time = self.initial_time
         
         if max_time > 0:
             progress_val = int((self.time_left / max_time) * 1000)

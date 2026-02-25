@@ -1,7 +1,7 @@
 {
   "start_hotkey": "f9",
   "circlec_hotkey": "f8",
-  "circlec_loop_time": 22.5,
+  "circlec_loop_time": 19.15,
   "circlec_first_time": 5.0,
   "start_hotkey_enabled": true,
   "circlec_hotkey_enabled": true,
@@ -19,7 +19,7 @@
     },
     {
       "label": "3",
-      "time": 23.5,
+      "time": 23.75,
       "first_time": 5.0
     }
   ],
@@ -29,5 +29,13 @@
     "warning_5s_circlec": "sounds/warning_5s_circleC.wav",
     "count_321": "sounds/count.wav",
     "end_0s": "sounds/end.wav"
-  }
+  },
+  "label3_circled_phases": [
+    23.5,
+    21.0
+  ],
+  "label3_start_phases": [
+    23.75,
+    23.5
+  ]
 }

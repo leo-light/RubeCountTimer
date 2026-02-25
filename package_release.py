@@ -4,7 +4,7 @@ import shutil
 import zipfile
 
 def package():
-    v_name = "ルベカウントタイマー_ver1.4"
+    v_name = "ルベカウントタイマー_ver1.6"
     if os.path.exists(v_name):
         shutil.rmtree(v_name)
     os.makedirs(v_name)
