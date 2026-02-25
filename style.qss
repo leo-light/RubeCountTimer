@@ -143,8 +143,8 @@ QPushButton#StartButton:pressed {
     background-color: #152618;
 }
 
-/* CircleD Button */
-QPushButton#DisasterButton {
+/* CircleC Button */
+QPushButton#CircleCButton {
     background-color: #3b3a1c;
     color: #ffcc00; /* Neon yellow text */
     border: 4px solid #f2cf4c; /* Neon yellow border */
@@ -154,12 +154,12 @@ QPushButton#DisasterButton {
     padding: 2px;
 }
 
-QPushButton#DisasterButton:hover {
+QPushButton#CircleCButton:hover {
     background-color: #525025;
     border-color: #ffcc00;
 }
 
-QPushButton#DisasterButton:pressed {
+QPushButton#CircleCButton:pressed {
     background-color: #262511;
 }
 
